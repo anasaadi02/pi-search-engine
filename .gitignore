@@ -1,0 +1,12 @@
+# Generated data: 100 MB each, rebuild with make_digits.py (see README)
+pi.txt
+pi_base26.txt
+pi_1m.txt
+
+# Python
+.venv/
+__pycache__/
+
+# Local tool config (may hold machine-specific or private settings)
+.mcp.json
+.claude/

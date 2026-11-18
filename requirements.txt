@@ -1,0 +1,1 @@
+gmpy2  # only needed to generate the data files; the server itself is stdlib-only

@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pi Search</title>
+<style>
+  :root {
+    --bg: #0e1116; --panel: #161b22; --line: #2a313c; --text: #e6edf3;
+    --muted: #8b949e; --faint: #5c6570; --accent: #f0b429; --bad: #ff7b72;
+    --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 system-ui, sans-serif; }
+  main { max-width: 680px; margin: 0 auto; padding: 48px 20px; }
+
+  header { text-align: center; margin-bottom: 32px; }
+  .pi { font-size: 72px; line-height: 1; color: var(--accent); font-family: Georgia, serif; }
+  h1 { margin: 8px 0 4px; font-size: 32px; }
+  header p { margin: 0; color: var(--muted); }
+
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+  fieldset { border: 0; margin: 0 0 16px; display: flex; gap: 4px;
+    background: var(--bg); border-radius: 8px; padding: 4px; }
+  legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  fieldset label { flex: 1; text-align: center; padding: 8px; border-radius: 6px; cursor: pointer; color: var(--muted); }
+  fieldset input { position: absolute; opacity: 0; }  /* hidden visually, still keyboard-accessible */
+  fieldset label:has(:checked) { background: var(--panel); color: var(--text); }
+  fieldset label:has(:focus-visible) { outline: 2px solid var(--accent); }
+
+  .row { display: flex; gap: 8px; }
+  input:not([type=radio]) { flex: 1; min-width: 0; padding: 12px 14px; font: inherit; font-family: var(--mono);
+    background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px; color-scheme: dark; }
+  input:focus { outline: 2px solid var(--accent); border-color: transparent; }
+  button { padding: 12px 20px; font: inherit; font-weight: 600; border: 0; border-radius: 8px;
+    background: var(--accent); color: #111; cursor: pointer; }
+  button:disabled { opacity: .35; cursor: default; }
+  button.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); }
+  button.link { padding: 0; background: none; color: var(--accent); font-weight: 400; border-radius: 0; }
+  .hint { margin: 10px 0 0; font-size: 14px; color: var(--muted); }
+
+  #out { margin-top: 24px; display: grid; gap: 12px; }
+  .card h2, .viewer h2 { margin: 0; font-size: 14px; font-weight: 500; color: var(--muted); }
+  .card h2 code { color: var(--text); font-family: var(--mono); white-space: pre; }
+  .pos { font-size: 28px; font-weight: 700; margin: 4px 0; }
+  .pos .link { font-size: 14px; margin-left: 8px; vertical-align: middle; }
+  .ctx { font-family: var(--mono); word-break: break-all; color: var(--muted); }
+  mark { background: var(--accent); color: #111; border-radius: 3px; padding: 0 2px; white-space: pre; }
+  .meta { font-size: 14px; color: var(--muted); margin: 8px 0 0; }
+  .miss .pos { color: var(--muted); font-size: 20px; }
+  .error { color: var(--bad); }
+
+  /* Viewer: rows of 50 symbols in groups of 10, labelled with the row's first position. */
+  .viewer { margin-top: 32px; scroll-margin-top: 16px; }
+  .viewer-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .viewer-head h2 { flex: 1; }
+  .viewer-head form { display: flex; gap: 8px; width: 200px; }
+  .viewer-head input { padding: 6px 10px; }
+  .viewer-head button { padding: 6px 12px; font-size: 14px; }
+  #digits { font-family: var(--mono); font-size: 14px; line-height: 1.9; }
+  .drow { display: flex; gap: 12px; }
+  .drow .n { color: var(--faint); min-width: 7.5em; text-align: right; user-select: none; }
+  .drow .groups { display: flex; flex-wrap: wrap; column-gap: 10px; }
+  .drow mark { padding: 0; border-radius: 2px; }
+  .dot { color: var(--faint); }
+  .pager { display: flex; justify-content: space-between; align-items: center; margin-top: 12px;
+    font-size: 14px; color: var(--muted); }
+
+  footer { margin-top: 40px; font-size: 13px; color: var(--muted); text-align: center; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="pi" aria-hidden="true">π</div>
+    <h1>Pi Search</h1>
+    <p>Find your birthday, your name, or any number hidden in π.</p>
+  </header>
+
+  <form id="search" class="panel">
+    <fieldset>
+      <legend>Search mode</legend>
+      <label><input type="radio" name="mode" value="digits" checked> Number</label>
+      <label><input type="radio" name="mode" value="date"> Date</label>
+      <label><input type="radio" name="mode" value="name"> Name</label>
+    </fieldset>
+    <div class="row">
+      <!-- One input per mode; the browser validates each one natively (pattern, date picker). -->
+      <input data-mode="digits" aria-label="Digits" inputmode="numeric" pattern="[0-9]+" maxlength="30" autocomplete="off">
+      <input data-mode="date" aria-label="Date" type="date" min="1000-01-01" max="9999-12-31" hidden>
+      <input data-mode="name" aria-label="Name" maxlength="20" autocomplete="off" hidden>
+      <button>Search</button>
+    </div>
+    <p class="hint" id="hint"></p>
+  </form>
+
+  <section id="out" aria-live="polite"></section>
+
+  <section class="viewer panel" id="viewer" aria-labelledby="viewer-title">
+    <div class="viewer-head">
+      <h2 id="viewer-title"></h2>
+      <form id="goto">
+        <input type="number" min="1" aria-label="Go to position">
+        <button class="ghost">Go</button>
+      </form>
+    </div>
+    <div id="digits"></div>
+    <div class="pager">
+      <button class="ghost" id="prev">← Previous</button>
+      <span id="range"></span>
+      <button class="ghost" id="next">Next →</button>
+    </div>
+  </section>
+
+  <footer>Nobody has proven that every pattern appears in π (that's the open "normal number" question), but every test so far says it behaves as if it does.</footer>
+</main>
+
+<script>
+const form = document.getElementById("search");
+const out = document.getElementById("out");
+const hint = document.getElementById("hint");
+const inputs = Object.fromEntries([...form.querySelectorAll("[data-mode]")].map(el => [el.dataset.mode, el]));
+const HINTS = {
+  digits: "Any sequence of digits 0–9.",
+  date: "Searched as DDMMYYYY, MMDDYYYY, YYYYMMDD and DDMMYY.",
+  name: "Searched in π written in base 26, where every position is a letter (A=0 … Z=25). Accents and spaces are ignored.",
+};
+// Which version of π each tab searches, and how the viewer introduces it.
+const SOURCE = { digits: "digits", date: "digits", name: "letters" };
+const TITLES = { digits: "π = 3. …", letters: "π in base 26 = D. …" };
+const PREFIX = { digits: "3.", letters: "D." };
+
+const mode = () => form.mode.value;
+const fmt = n => n.toLocaleString();
+
+function syncMode() {
+  for (const [m, el] of Object.entries(inputs)) {
+    el.hidden = el.disabled = m !== mode();  // disabled fields skip validation, so a stale
+    el.required = m === mode();              // invalid value in another tab can't block submit
+  }
+  hint.textContent = HINTS[mode()];
+  // The viewer shows the version of π the tab searches. Positions differ between
+  // versions, so a switch starts over at position 1.
+  if (SOURCE[mode()] !== view.source) {
+    view.source = SOURCE[mode()];
+    view.hl = null;
+    if (view.data) loadPage(1);
+  }
+}
+
+// Tiny helper: el("p", "meta", "text") -> <p class="meta">text</p>
+// textContent (never innerHTML) means user input can't inject HTML.
+function el(tag, className, ...children) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  node.append(...children);
+  return node;
+}
+
+// A clickable position that opens the viewer on that match.
+function posLink(pos, len, label = fmt(pos)) {
+  const b = el("button", "link", label);
+  b.type = "button";
+  b.onclick = () => { showDigits(pos, len); viewer.scrollIntoView({ behavior: "smooth" }); };
+  return b;
+}
+
+function card(r, data) {
+  const { total, unit, source } = data;
+  const title = el("h2", "", r.label + " · ", el("code", "", r.pattern));
+  if (!r.count) {
+    return el("article", "card panel miss", title,
+      el("p", "pos", `Not in the first ${fmt(total)} ${unit}s`),
+      el("p", "meta", `A random ${r.length}-${unit} string first appears around position ` +
+        `${fmt(r.expected)} on average.` + (r.expected > total ? " Try something shorter." : "")));
+  }
+  const [before, match, after] = r.context;
+  const [first, ...rest] = r.positions;
+  const meta = el("p", "meta", `Found ${r.capped ? fmt(r.count) + "+" : fmt(r.count)} time${r.count === 1 ? "" : "s"}`);
+  if (rest.length) {
+    meta.append(" · also at ");
+    rest.forEach((p, i) => meta.append(i ? ", " : "", posLink(p, r.length)));
+    if (r.count > r.positions.length) meta.append(", …");
+  }
+  return el("article", "card panel", title,
+    el("p", "pos", `Position ${fmt(first)} `, posLink(first, r.length, "View in π ↓")),
+    el("p", "ctx", first <= 20 ? PREFIX[source] : "…", before, el("mark", "", match), after, "…"),
+    meta);
+}
+
+async function run() {
+  const params = new URLSearchParams({ mode: mode(), q: inputs[mode()].value });
+  history.replaceState(null, "", "?" + params);  // the URL is now a shareable link to this search
+  out.replaceChildren(el("p", "meta", "Searching…"));
+  try {
+    const res = await fetch("/api/search?" + params);
+    const data = await res.json();
+    if (!res.ok) return out.replaceChildren(el("p", "error", data.error));
+    out.replaceChildren(...data.results.map(r => card(r, data)));
+    const hit = data.results.find(r => r.count);
+    if (hit) showDigits(hit.positions[0], hit.length);  // viewer follows the best hit
+  } catch {
+    out.replaceChildren(el("p", "error", "Can't reach the server. Is server.py running?"));
+  }
+}
+
+// ---- Viewer ----
+const viewer = document.getElementById("viewer");
+const digitsBox = document.getElementById("digits");
+const prev = document.getElementById("prev"), next = document.getElementById("next");
+const ROW = 50, PAGE = 1000;  // 20 rows of 50 symbols per page
+let view = { source: null, start: 1, total: Infinity, hl: null };  // hl = [firstPos, length]
+
+// One group of up to 10 symbols -> text, dimmed "·" runs and <mark> runs.
+function renderGroup(text, pos) {
+  const [hlPos, hlLen] = view.hl ?? [0, 0];
+  const nodes = [];
+  let run = "", kind = "";
+  const flush = () => {
+    if (run) nodes.push(kind === "hl" ? el("mark", "", run) : kind === "dot" ? el("span", "dot", run) : run);
+    run = "";
+  };
+  [...text].forEach((ch, i) => {
+    const p = pos + i;
+    const k = p >= hlPos && p < hlPos + hlLen ? "hl" : ch === "·" ? "dot" : "";
+    if (k !== kind) { flush(); kind = k; }
+    run += ch;
+  });
+  flush();
+  return nodes;
+}
+
+async function showDigits(pos = 1, hlLen = 0) {
+  view.hl = hlLen ? [pos, hlLen] : null;
+  // Row-aligned page start, with the target ~5 rows down so it has context above.
+  await loadPage(Math.max(1, Math.floor((pos - 1) / ROW) * ROW + 1 - 5 * ROW));
+}
+
+let latest = 0;
+async function loadPage(start) {
+  const me = ++latest;
+  const data = await (await fetch(`/api/digits?source=${view.source}&start=${start}&count=${PAGE}`)).json();
+  if (me !== latest) return;  // a newer request was made while we waited: drop this stale one
+  view.start = data.start; view.total = data.total; view.data = data;
+  const rows = [];
+  for (let r = 0; r < data.digits.length; r += ROW) {
+    const groups = [];
+    for (let g = r; g < Math.min(r + ROW, data.digits.length); g += 10) {
+      groups.push(el("span", "", ...renderGroup(data.digits.slice(g, g + 10), data.start + g)));
+    }
+    rows.push(el("div", "drow", el("span", "n", fmt(data.start + r)), el("span", "groups", ...groups)));
+  }
+  digitsBox.replaceChildren(...rows);
+  document.getElementById("viewer-title").textContent = TITLES[view.source];
+  document.getElementById("range").textContent =
+    `${fmt(data.start)}–${fmt(data.start + data.digits.length - 1)} of ${fmt(data.total)}`;
+  prev.disabled = data.start <= 1;
+  next.disabled = data.start + data.digits.length > data.total;
+}
+
+prev.onclick = () => loadPage(Math.max(1, view.start - PAGE));
+next.onclick = () => loadPage(view.start + PAGE);
+document.getElementById("goto").addEventListener("submit", e => {
+  e.preventDefault();
+  const n = Number(e.target.querySelector("input").value);
+  if (n >= 1) showDigits(Math.min(n, view.total), 1);
+});
+
+// ---- Wiring ----
+form.addEventListener("change", e => { if (e.target.name === "mode") syncMode(); });
+form.addEventListener("submit", e => { e.preventDefault(); run(); });
+
+// Opening a shared link: restore mode + query from the URL and search immediately.
+const shared = new URLSearchParams(location.search);
+if (inputs[shared.get("mode")]) {
+  form.mode.value = shared.get("mode");
+  inputs[shared.get("mode")].value = shared.get("q") ?? "";
+}
+syncMode();
+showDigits(1);
+if (shared.get("q")) run();
+</script>
+</body>
+</html>
